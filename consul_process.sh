@@ -1,15 +1,15 @@
 #!/bin/sh
 
 
+# 注册中心地址
 REGISTRATION_CENTER_IP="xx.xx.xx.xx"
 
-
-##服务配置
+# 服务配置
 SERVICE_IP="xx.xx.xx.xx"
-PORT="xxxx"
+PORT="5000"
 NODE_NUM="1"
-SERVICE_NAME="service-name"
-SERVICE_ID="$SERVICE_NAME""_$PORT""_node$NODE_NUM"
+SERVICE_NAME="name"
+SERVICE_ID="$SERVICE_NAME""-$PORT""-node$NODE-NUM"
 
 
 
@@ -35,7 +35,7 @@ register(){
 health_check(){
 	result=`curl http://$REGISTRATION_CENTER_IP:8500/v1/health/checks/$SERVICE_NAME`
 
-	if [ $result = "[]" ]; then
+	if [ "$result" = "[]" ]; then
     	echo "fail"
     else
     	echo "ok"
@@ -57,7 +57,7 @@ is_exist(){
         if [ -n "$pid" ]
         then
                 echo "$PORT端口进程正在运行。 PID=$pid"
-                return "$pid"
+                return $pid
         else
                 echo "$PORT端口进程不存在。"
                 return 0
@@ -73,13 +73,16 @@ start(){
         then
                 nohup python3 $1 &
                 #检验服务是否启动成功
-                sleep 10
-                pid=$(ps -ef | grep $1 | grep -v -E 'grep|/bin/sh' | awk '{print $2}')
-                if [ -n $pid ]
+                echo ".........................稍等服务正在启动中.................................."
+                #睡眠时间根据服务启动时间修改！！！
+                sleep 30
+                is_exist
+                pid=`echo $?`
+                if [ $pid -eq "0" ]
                 then
-                    echo "$1, 端口$PORT服务成功启动。"
+                    echo "$1, 端口$PORT服务启动失败！！！！！！"
                 else
-                    echo "$1, 端口$PORT服务启动失败。"
+                    echo "$1, 端口$PORT服务成功启动。PID=$pid"
                 fi
         else
                 echo "$1, 端口$PORT已经在运行, PID=$pid"
@@ -90,12 +93,15 @@ start(){
 stop(){
         #先判断是否在运行
         is_exist
-        if [ $? -eq "0" ]
+        pid=`echo $?`
+        if [ $pid -eq "0" ]
         then
                 echo "$1, 端口$PORT is not running."
         else
-                kill -9 $?
+                echo "kill进程：$pid"
+                kill -9 $pid
                 #检验服务是否停止成功
+                sleep 3
                 is_exist
                 if [ $? -eq "0" ]
                 then
@@ -110,23 +116,30 @@ restart(){
          # 节点注销
         deregister
         health=$(health_check)
-        if [ $health = "fail" ]
+        if [ $health = "ok" ]
         then
             echo "$SERVICE_ID节点已注销成功"
             stop $1
             sleep 5
             echo "$1, 端口$PORT开始重启..."
-            start
-            echo "服务成功重启。"
-            # 节点重新注册
-            register
-            sleep 2
-            health=$(health_check)
-            if [ $health = "ok" ]
+            start $1
+            is_exist
+            pid=`echo $?`
+            if [ $pid -eq "0" ]
             then
-                echo "$SERVICE_ID节点重新注册成功！"
+                echo "热备更新服务重启失败！请查找原因！"
             else
-                echo "$SERVICE_ID节点重新注册失败！请查找原因！"
+                echo "服务成功重启。"
+                # 节点重新注册
+                register
+                sleep 2
+                health=$(health_check)
+                if [ $health = "ok" ]
+                then
+                    echo "$SERVICE_ID节点重新注册成功！"
+                else
+                    echo "$SERVICE_ID节点重新注册失败！请查找原因！"
+                fi
             fi
         else
             echo "$SERVICE_ID节点已注销失败"
@@ -162,7 +175,7 @@ case $2 in
         health_check
         ;;
 *)
-        echo "Usage: ./api_service.sh    服务启动文件名   start|stop|restart|ps|register|deregister|check|health_check"
+        echo "Usage: ./api_service.sh    服务启动文件名   start|stop|restart|ps|register|deregister|check|health_check    test|release"
         # test测试环境，release正式环境
         ;;
 esac
